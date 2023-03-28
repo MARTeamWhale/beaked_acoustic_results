@@ -1,0 +1,442 @@
+---
+title: "Beaked Whale Acoustic Detection Report"
+date: "Date created: `r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  word_document:
+    reference_docx: word_styles_reference_01.docx
+    fig_caption: TRUE
+format: "pipe"
+
+params:
+  deployment: "DAC_2017_11"
+  metadata: "deployment_summary.csv"
+  hourly: TRUE
+  missing_data: FALSE
+  missing_data_start: NULL
+  missing_data_end: NULL
+always_allow_html: TRUE
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE) # sets global defaults
+
+# load packages
+library(pacman)
+pacman::p_load(here, tidyverse, lubridate, readxl, kableExtra, tinytex, flextable, RColorBrewer, xlsx, crul, stringr, readr)
+
+# set dplyr not to display 'summarise' messages
+options(dplyr.summarise.inform = FALSE)
+
+# deployment name in metadata uses "-" instead of "_" 
+deploymentm<-str_replace_all(params$deployment, "_", "-")
+
+# input metadata
+metadata<-read_csv(here("metadata", paste(params$metadata)))
+
+# input data: presence table
+xlsx_data<-read_excel(here("input", paste(params$deployment,"_Beaked_Presence.xlsx", sep="")))
+
+# clean up
+names(xlsx_data) = sub(".*_","",names(xlsx_data)) 
+
+# create vector of all possible beaked whale species
+species_list <- c("Ha","Mb","Me","Zc")
+
+# create named vector
+species_list_named <-c("Ha","Mb","Me","Zc")
+species_labels <- c("Northern bottlenose","Sowerby's","True's/Gervais'","Cuvier's")
+names(species_list_named) <-species_labels
+
+
+```
+
+
+```{r presence}
+
+# set up metadata
+  
+deployment_metadata <- metadata %>%
+  
+  # select relevant deployment
+  filter(Deployment==deploymentm) %>%
+  
+  # set up latitude and longitude for cleaner output, format as numeric
+  mutate(latitude = format(Latitude, digits=4), longitude = format(Longitude, digits=4)) %>% 
+  mutate(latitude = as.numeric(latitude), longitude = as.numeric(longitude)) %>% 
+  
+  # parse dates and drop unneeded columns ('start' is first full recording day, 'end' is last full recording day)
+  transmute(deployment = Deployment,
+            latitude,
+            longitude,
+            start = as_date(`In-water_start`)+1, 
+            end = as_date(`In-water_end`)-1) %>% 
+  
+  # get day of year for start and end, calculate number of days with effort
+  mutate(start_day = yday(start), 
+         start_year = year(start), 
+         end_day = yday(end), 
+         end_year = year(end),
+         ndays = as.numeric(end - start+1))
+
+# account for missing data if needed
+
+if (params$missing_data){
+  
+  subdays <- as.numeric((params$missing_data_end - params$missing_data_start)+1)
+
+  deployment_metadata <- deployment_metadata %>% 
+    mutate(ndays = ndays-subdays)
+
+}
+
+
+# set up species presence data
+
+presence_data<-xlsx_data  %>% 
+  
+  # transform data to "long" format
+  pivot_longer(any_of(species_list), names_to="species", values_to="presence") %>% 
+  
+  # clean up and parse dates
+  transmute(species, 
+            presence, 
+            start_time = StartTime, 
+            start_date = as_date(as.character(StartTime), format = "%Y%m%d_%H%M%S")) %>%
+  
+  # add columns for year, month, and day of year
+  mutate(year = factor(year(start_date))) %>% 
+  mutate(month = month(start_date)) %>% 
+  mutate(day_of_year = strftime(start_date, format = "%j")) %>% 
+  
+  # add all species in list as factor levels
+  mutate(species = fct_expand(factor(species), species_list_named)) %>% 
+  
+  # rename factor levels with species' common names
+  mutate(species = fct_recode(species, !!!species_list_named))
+
+
+```
+
+This report summarizes daily presence of beaked whale detections in the **`r deployment_metadata$deployment`** dataset, deployed at `r deployment_metadata$latitude`°N `r abs(deployment_metadata$longitude)`°W and analyzed from `r deployment_metadata$start` to `r deployment_metadata$end` (`r deployment_metadata$ndays` days`r if(params$missing_data){paste0(", not including ", subdays, " days of missing data")}`).  
+
+## Daily Presence Summary 
+
+
+```{r daily summary}
+
+# compile daily presence information
+
+daily_presence_data<-presence_data %>% 
+  
+  group_by(species, start_date) %>% 
+  
+  # count number of hours per day with validated presence and uncertain presence
+  summarise(hours_present_per_day = sum(presence == 1), 
+            hours_uncertain_per_day = sum(presence == -1)) %>% 
+  
+  # add column with call presence specification
+  mutate(daily_presence = case_when(hours_present_per_day>0 ~ 1,
+                                   hours_present_per_day==0 & hours_uncertain_per_day>0 ~ -1,
+                                   hours_present_per_day==0 & hours_uncertain_per_day==0 ~ 0)) %>% 
+  ungroup()
+
+# summarize for table
+
+daily_summary<-daily_presence_data %>% 
+  
+  group_by(species) %>% 
+  
+  summarize(days_present = sum(daily_presence==1), 
+            days_uncertain = sum(daily_presence==-1)) %>% 
+  
+  mutate(percent_days_present = days_present/deployment_metadata$ndays*100,
+         percent_days_uncertain = days_uncertain/deployment_metadata$ndays*100) %>% 
+  
+  ungroup()
+
+```
+
+
+```{r hourly summary, eval=params$hourly}
+
+# compile hourly presence information, if analysis was done using hourly time bins
+
+deployment_metadata <- deployment_metadata %>% 
+  mutate(nhours = ndays*24)
+
+hourly_summary<-presence_data %>% 
+  group_by(species) %>% 
+  summarize(hours_present = sum(presence==1), 
+            hours_uncertain = sum(presence==-1)) %>% 
+  mutate(percent_hours_present = hours_present/deployment_metadata$nhours*100,
+         percent_hours_uncertain = hours_uncertain/deployment_metadata$nhours*100)
+
+hours_per_day_summary<-daily_presence_data %>% 
+  group_by(species) %>% 
+  summarize(mean_hours = mean(hours_present_per_day),
+            min_hours = min(hours_present_per_day),
+            max_hours = max(hours_present_per_day))
+
+```
+
+
+```{r daily_summary_table}
+
+# create table
+
+# specify column names
+daily_col_names<-c("Species", "Days present (#)", "Days possibly present (#)", "Days present (%)", "Days possibly present (%)")
+
+# fill in table
+
+daily_summary %>% 
+  
+  mutate_if(is.numeric, format, digits=2) %>% 
+  flextable() %>% 
+  set_header_df(mapping = data.frame(keys = colnames(daily_summary), 
+                                     values = daily_col_names, 
+                                     stringsAsFactors = FALSE), 
+                key = "keys" ) %>%
+  set_table_properties(layout = "autofit", width = 1) %>%
+  theme_booktabs() %>% 
+  font(part="all", fontname = "Segoe UI")
+  
+```
+\
+
+```{r fig1, fig.width=8.25, fig.cap="Daily presence of beaked whale species"}
+
+# assign colors to species for plotting
+cols=c("#F8766D","#00BA38","#E76BF3","#619CFF")
+names(cols) <-species_labels
+
+
+# set up missing data based on deployment metadata
+# no_data_periods <- tibble(starts = c(1, deployment_metadata$end_day),
+#                           ends = c(deployment_metadata$start_day, 365),
+#                           year = as_factor(c(deployment_metadata$start_year,
+#                                              deployment_metadata$end_year))) %>% 
+#   mutate(start_dates = as.Date(paste0(year, "-01-01"))-1 + (starts),
+#          end_dates = as.Date(paste0(year, "-01-01"))-1 + (ends))
+
+# set up missing data per year based on deployment metadata (for day of year axis)
+no_data_periods <- tibble(starts = c(1, deployment_metadata$end_day+1),
+                          ends = c(deployment_metadata$start_day-1, 366),
+                          year = as_factor(c(deployment_metadata$start_year, deployment_metadata$end_year))) 
+
+# if missing_data = TRUE, add additional missing data period
+if (params$missing_data) {
+  no_data_periods<-no_data_periods %>% 
+    add_row(starts = yday(params$missing_data_start),
+            ends = yday(params$missing_data_end),
+            year = as_factor(year(params$missing_data_start)))
+            #start_dates = params$missing_data_start,
+            #end_dates = params$missing_data_end)
+}
+            
+# set up plot data
+plot_presence <- daily_presence_data %>% 
+  group_by(species, start_date) %>% 
+  filter(daily_presence==1) %>% 
+  mutate(year = as_factor(year(start_date)))
+
+
+# create daily presence figure  
+ggplot() +
+  
+  facet_wrap(~year, ncol=1) +
+  
+  # plot missing data periods using single geom_rect call - do this first so that years are in correct order
+  geom_rect(data=no_data_periods, aes(xmin=starts,xmax=ends,ymin=-Inf, ymax=Inf), 
+            fill = "grey45", colour = NA, alpha = 0.2) +
+  
+  # plot species daily presence
+  geom_tile(data=plot_presence,aes(x=yday(start_date), y=species, fill = species), height=0.75) + 
+  
+  # format plot
+  theme(axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        panel.background = element_rect(fill = "white", colour = "grey50"),
+        axis.text = element_text(size = 12), 
+        axis.text.x = element_text(angle = 0, vjust = 0, hjust = 0),
+        strip.text.x = element_text(size = 12,face = "bold"), 
+        strip.background = element_rect(fill="grey95", colour = "black"),
+        panel.border = element_rect(fill = NA, colour = "black"),
+        plot.margin = margin(0.1,0.1,0.1,0.1,"cm"),
+        legend.position = "right",
+        legend.justification = "left",
+        legend.direction = "vertical") +
+        #legend.margin = margin(t = -10)) +
+  
+  # format x axis breaks by month
+  scale_x_continuous("", 
+        breaks = c(001,032,060,091,121,152,182,213,244,274,305,335), 
+        labels= c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"),
+        limits = c(0,367),
+        expand = c(0, 0)) +
+  
+  # set y axis direction to match legend
+  scale_y_discrete(limits = rev) +
+  
+  # format legend
+  scale_fill_manual(values = cols,
+                      name="Species",
+                      drop = T)
+
+
+```
+\
+**Figure 1:** Daily presence of beaked whale species in the `r deployment_metadata$deployment` dataset.
+\
+\
+```{r fig2, fig.width=6, fig.cap="Weekly presence of beaked whale species"}
+
+# get number of effort days per week from deployment metadata
+weekly_effort <- tibble(effort_date = seq.Date(deployment_metadata$start, deployment_metadata$end, by=1)) %>% 
+  mutate(year = factor(year(effort_date))) %>%
+  mutate(weekstart = floor_date(effort_date, "weeks")) %>% 
+  group_by(year, weekstart) %>% 
+  summarise(days_effort = n()) %>% 
+  ungroup()
+
+# set up missing data per year based on deployment metadata (for date axis)
+no_data_periods2 <- tibble(year = as_factor(c(deployment_metadata$start_year, deployment_metadata$end_year)),
+                           start_dates = c(as.Date(paste0(deployment_metadata$start_year, "-01-01")), deployment_metadata$end),
+                           end_dates = c(deployment_metadata$start-1, as.Date(paste0(deployment_metadata$end_year, "-12-31"))))
+
+# get presence days per week and join with effort
+days_per_week <- daily_presence_data %>% 
+  mutate(weekstart = floor_date(start_date, "weeks")) %>% 
+  mutate(year = factor(year(start_date))) %>% 
+  group_by(species, year, weekstart) %>% 
+  summarise(days_present = sum(daily_presence == 1)) %>% 
+  left_join(weekly_effort, by=c("year","weekstart")) %>% 
+  mutate(proportion_days_present = days_present/days_effort) %>% 
+  ungroup()
+
+# create days per week figure
+
+ggplot() +
+  
+  # facet by species 
+  facet_wrap(~species, ncol = 1) + 
+  
+  # add no data periods 
+  geom_rect(data = no_data_periods2, 
+            aes(xmin = start_dates, xmax = end_dates, ymin = -Inf, ymax = Inf),
+            fill = "grey50", 
+            colour = NA, 
+            alpha = 0.2) +
+  
+  # add bar plot of number of days per week with species presence
+  geom_col(data = days_per_week, 
+           aes(x = weekstart, y = days_present, fill = species), 
+           show.legend = F, 
+           width = 5) + 
+  
+  # geom_bar(data = days_per_month, aes(x = Y_M_D, y = proportion_days_present, fill = species), 
+  #          stat = "identity", show.legend = F) + 
+  
+  # format colors and scale
+  scale_fill_manual(values=cols, 
+                    name = "Species",
+                    drop = T) +
+  
+  scale_y_continuous(expand = c(0,0), limits = c(0,7)) +
+  
+  scale_x_date(date_labels = "%b %Y", expand = c(0,0)) +
+  
+  # format plot
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major =element_blank(),
+        panel.background = element_rect(fill= "white", colour = "grey50"), 
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 11, face = "bold"),
+        strip.text.x = element_text(size = 11, face = "bold"), 
+        strip.background =element_rect(fill="grey95", colour = "grey50"), 
+        panel.border = element_rect(fill = NA, colour = "grey60"),
+        plot.margin = margin(0.5,0.5,0.5,0.5,"cm")) + #format margins 
+  
+  xlab("") + 
+  
+  ylab("Days per week")
+  
+```
+\
+**Figure 2:** Number of days per week with beaked whale clicks in the `r deployment_metadata$deployment` dataset.
+\
+`r if(params$hourly){
+"
+## Hourly Presence Summary  
+"}`
+```{r hourly_summary_table, eval=params$hourly}
+
+# specify column names
+hourly_col_names<-c("Species", "Mean hours per day", "Min hours per day", "Max hours per day")
+
+# fill in table
+hours_per_day_summary %>% 
+  mutate_if(is.numeric, format, digits=2) %>% 
+  flextable() %>% 
+  set_header_df(mapping = data.frame(keys = colnames(hours_per_day_summary), 
+                                     values = hourly_col_names, stringsAsFactors = FALSE),
+                key = "keys" ) %>%
+  set_table_properties(layout = "autofit", width = 1) %>%
+  theme_booktabs() %>% 
+  font(part="all", fontname = "Segoe UI")
+ 
+```
+\
+```{r fig3, eval=params$hourly, fig.width=6, fig.cap="Number of hours per day with beaked whale clicks present"}
+
+# create hours per day figure
+ggplot() +
+  
+  # facet by species 
+  facet_wrap(~species, ncol = 1) + 
+  
+  # add no data periods (date axis)
+  geom_rect(data = no_data_periods2, 
+            aes(xmin = start_dates, xmax = end_dates, ymin = -Inf, ymax = Inf),
+            fill = "grey50", 
+            colour = NA, 
+            alpha = 0.2) +
+  
+  # add bar plot of proportion of hours per day
+  geom_col(data = daily_presence_data, 
+           aes(x = start_date, y = hours_present_per_day, fill = species), 
+           show.legend = F,
+           width = 1) + 
+  
+  # formatting
+  scale_fill_manual(values=cols) +
+  
+  scale_y_continuous(expand = c(0,0), limits=c(0,24)) +
+  
+  scale_x_date(date_labels = "%b %Y", expand = c(0,0)) +
+  
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major =element_blank(),
+        panel.background = element_rect(fill= "white", colour = "grey50"), 
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 11, face = "bold"),
+        strip.text.x = element_text(size = 11, face = "bold"), 
+        strip.background =element_rect(fill="white", colour = "grey50"), 
+        panel.border = element_rect(fill = NA, colour = "grey60"),
+        plot.margin = margin(0.5,0.5,0.5,0.5,"cm")) + #format margins 
+  
+  xlab("Date") + 
+  
+  ylab("Hours per day with clicks present")
+  
+```
+
+`r if(params$hourly){
+"
+**Figure 3:** Number of hours per day with beaked whale clicks.
+
+"}`

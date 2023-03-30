@@ -4,7 +4,7 @@
 library(here)
 library(knitr)
 
-################################################################################ 
+################################################################################
 
 # SET PARAMETERS
 
@@ -26,12 +26,19 @@ missing_data_end = as.Date("2019-05-11", format="%Y-%m-%d")
 
 # don't need to modify anything below
 
+#create output, input, and metadata folders if they do not already exist and check if Presence table and metadata are present.
+while (!dir.exists(here("input"))) {dir.create(here("input"))}
+if (dir.exists(here("input"))) {while(!file.exists(here("input",paste0(deployment,"_Beaked_Presence.xlsx")))) {stop("Missing Presence table! Please copy required XLSX file into input folder")}}
+if (!dir.exists(here("output"))) {dir.create(here("output"))}
+while (!dir.exists(here("metadata"))) {dir.create(here("metadata"))}
+if (dir.exists(here("metadata"))) {while (!file.exists(here("metadata/deployment_summary.csv"))) {stop("Missing Metadata! Please copy updated deployment_summary CSV generated from the Whale Equipment Metadatabase into the metadata folder")}}
+
 # define function
 render_BWD_report = function(
   deployment, metadata, hourly, missing_data, missing_data_start, missing_data_end) {
-  
+
   rmarkdown::render(
-    "BWD_report_word.Rmd", 
+    "BWD_report_word.Rmd",
       params = list(
         deployment = deployment,
         metadata = metadata,

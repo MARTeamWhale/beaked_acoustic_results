@@ -8,8 +8,9 @@ output:
 format: "pipe"
 
 params:
-  deployment: "DAC_2017_11"
-  metadata: "deployment_summary.csv"
+  project:
+  deployment:
+  metadata:
   hourly: TRUE
   missing_data: FALSE
   missing_data_start: NULL
@@ -32,19 +33,20 @@ options(dplyr.summarise.inform = FALSE)
 deploymentm<-str_replace_all(params$deployment, "_", "-")
 
 # input metadata
-metadata<-read_csv(here("metadata", paste(params$metadata)))
+metadata<-read_csv(paste0(r"(R:\Science\CetaceanOPPNoise\CetaceanOPPNoise_2\PAM_metadata)","\\", params$metadata))
 
 # input data: presence table
-xlsx_data<-read_excel(here("input", paste(params$deployment,"_Beaked_Presence.xlsx", sep="")))
+xlsx_data<-read_excel(paste0(r"(R:\Science\CetaceanOPPNoise\CetaceanOPPNoise_4\PAM_analysis)", "\\", params$project, "\\", params$deployment, "\\", params$deployment, "_Beaked_Presence.xlsx"))
+
 
 # clean up
 names(xlsx_data) = sub(".*_","",names(xlsx_data)) 
 
 # create vector of all possible beaked whale species
-species_list <- c("Ha","Mb","Me","Zc")
+species_list <- c("Ha","Mb","MmMe","Zc")
 
 # create named vector
-species_list_named <-c("Ha","Mb","Me","Zc")
+species_list_named <-c("Ha","Mb","MmMe","Zc")
 species_labels <- c("Northern bottlenose","Sowerby's","True's/Gervais'","Cuvier's")
 names(species_list_named) <-species_labels
 

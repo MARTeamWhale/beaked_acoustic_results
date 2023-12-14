@@ -12,16 +12,20 @@ library(knitr)
 # required:
 
 project = "DFO_MAR"
-deployment = "FCH_2020_09" # name of deployment to summarize
+deployment = "GBK_2020_09" # name of deployment to summarize
 metadata = "deployment_summary.csv" # name of metadata csv file
 hourly = FALSE # true if validated on an hourly basis (otherwise assumes daily)
-missing_data = FALSE # true if there is missing data within deployment period
+missing_data = TRUE # true if there is missing data within deployment period
 
 
-# if missing_data = TRUE, specify dates below (if false, this will be ignored):
+# if missing_data = TRUE, specify start and end date(s) of missing data period(s) (if false, this will be ignored)
 
-missing_data_start = as.Date("2019-05-06", format="%Y-%m-%d")
-missing_data_end = as.Date("2019-05-11", format="%Y-%m-%d")
+# NOTES:
+  # 1) use format c("YYYY-MM-DD", "YYYY-MM-DD")
+  # 2) if missing data spans two years, list as two separate periods (ending Dec 31 and starting Jan 1)
+
+missing_data_starts = c("2020-11-16","2021-03-09","2021-05-05")
+missing_data_ends = c("2020-12-24","2021-03-28","2021-05-24")
 
 ################################################################################
 
@@ -39,8 +43,8 @@ render_BWD_report = function(
         metadata = metadata,
         hourly = hourly,
         missing_data = missing_data,
-        missing_data_start = missing_data_start,
-        missing_data_end = missing_data_end
+        missing_data_starts = missing_data_starts,
+        missing_data_ends = missing_data_ends
       ),
     output_file = paste0(r"(R:\\Science\\CetaceanOPPNoise\\CetaceanOPPNoise_4\\PAM_analysis)",
                          "\\", project, "\\", deployment, "\\", "BWD_Report-", deployment, ".docx")

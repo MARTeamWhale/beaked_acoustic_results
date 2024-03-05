@@ -216,7 +216,7 @@ daily_col_names <-c ("Species", "Days present (#)", "Days possibly present (#)",
 
 daily_summary %>% 
   
-  mutate_if(is.numeric, format, digits=2) %>% 
+  mutate_if(is.numeric, format, digits=1) %>% 
   flextable() %>% 
   set_header_df(mapping = data.frame(keys = colnames(daily_summary), 
                                      values = daily_col_names, 

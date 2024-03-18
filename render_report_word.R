@@ -12,7 +12,7 @@ pacman::p_load(here, knitr)
 # required:
 
 project = "DFO_MAR"
-deployment = "COC_2020_09" # name of deployment to summarize
+deployment = "EFC_2021_08" # name of deployment to summarize
 metadata = "deployment_summary.csv" # name of metadata csv file
 hourly = FALSE # true if validated on an hourly basis (otherwise assumes daily)
 missing_data = FALSE # true if there is missing data within deployment period

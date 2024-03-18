@@ -36,7 +36,7 @@ render_BWD_report = function(
   project, deployment, metadata, hourly, missing_data, missing_data_starts, missing_data_ends) {
 
   rmarkdown::render(
-    "BWD_report_word.Rmd",
+    here("report_files", "BWD_report_word.Rmd"),
       params = list(
         project = project,
         deployment = deployment,

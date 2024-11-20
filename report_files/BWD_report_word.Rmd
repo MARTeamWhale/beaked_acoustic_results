@@ -46,7 +46,7 @@ species_vec <- c("Ha","Mb","MmMe","Zc")
 
 # create named vector
 species_vec_named <- c("Ha","Mb","MmMe","Zc")
-species_labels <- c("Northern bottlenose","Sowerby's","True's/Gervais'","Cuvier's")
+species_labels <- c("Northern bottlenose","Sowerby's","True's/Gervais'","Goose-beaked")
 names(species_vec_named) <- species_labels
 
 

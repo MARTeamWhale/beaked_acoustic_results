@@ -35,8 +35,18 @@ deploymentm <- str_replace_all(params$deployment, "_", "-")
 # input metadata
 metadata <- read_csv(paste0(r"(R:\Science\CetaceanOPPNoise\CetaceanOPPNoise_2\PAM_metadata)","\\", params$metadata))
 
-# input data: presence table
-xlsx_data <- read_excel(paste0(r"(R:\Science\CetaceanOPPNoise\CetaceanOPPNoise_4\PAM_analysis)", "\\", params$project, "\\", params$deployment, "\\", params$deployment, "_Beaked_Presence.xlsx"))
+# input data: presence table(s)
+input <- paste0(r"(R:\Science\CetaceanOPPNoise\CetaceanOPPNoise_4\PAM_analysis)", "\\", params$project, 
+                "\\", params$deployment)
+
+# create list of presence table files and extract deployment names
+data_list = list.files(path = input, pattern = "*Presence.xlsx", full.names=T) 
+
+# read in all presence tables
+xlsx_data <- data_list %>% 
+  map_df(~read_excel(.))
+
+###
 
 # clean up
 names(xlsx_data) = sub(".*_","",names(xlsx_data)) 
@@ -129,7 +139,10 @@ presence_data<-xlsx_data  %>%
   mutate(species = fct_expand(factor(species), species_vec_named)) %>% 
   
   # rename factor levels with species' common names
-  mutate(species = fct_recode(species, !!!species_vec_named))
+  mutate(species = fct_recode(species, !!!species_vec_named)) %>% 
+  
+  # drop NA rows (resulting from multiple presence tables)
+   drop_na("presence")
 
 
 ```
